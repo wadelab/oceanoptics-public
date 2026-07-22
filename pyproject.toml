@@ -1,0 +1,21 @@
+[project]
+name = "oceanoptics-calibration"
+version = "0.1.0"
+description = "Ocean Optics spectrometer calibration and PsychoPy monitor profile tooling."
+readme = "README.md"
+requires-python = ">=3.10,<3.12"
+dependencies = [
+    "matplotlib>=3.8",
+    "numpy>=1.26",
+    "pandas>=2.1",
+    "scipy>=1.11",
+    "seabreeze[cseabreeze,pyseabreeze]>=2.8",
+]
+
+[project.optional-dependencies]
+psychopy = [
+    "psychopy>=2024.2,<2026",
+]
+
+[tool.uv]
+package = false

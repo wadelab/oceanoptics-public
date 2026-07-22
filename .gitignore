@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.py[cod]
+.DS_Store
+
+# Editor / office temp and lock files
+.~lock.*#
+*~
+*.swp
+*.bak
+Thumbs.db
+
+# Acquired measurement outputs. This repository ships no calibration data;
+# your own runs go here and must not be committed.
+calibration_data/
