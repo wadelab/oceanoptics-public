@@ -27,6 +27,16 @@ Optional but recommended for a full calibration:
 Mount the spectrometer so it looks squarely at a patch near the centre of the
 screen, close enough to fill its field of view, and don't move it once you start.
 
+**Turn off OS colour management before you measure.** Desktop colour management
+(GNOME/`colord`, macOS ColorSync, Night Light / f.lux and similar) can install a
+colour-correction *matrix* on the GPU, between your stimulus and the panel. This
+silently invalidates a calibration, and it hides well: these matrices normally
+preserve white, so a white-point check looks perfect while the pure primaries are
+wrong. The symptom to watch for is a display that measures as non-additive —
+W noticeably different from R+G+B in some band — which real LCD/LED panels
+usually are not. On Linux/NVIDIA you can check with
+`xrandr --prop | grep CscMatrix` (identity is `65536 0 0 / 0 65536 0 / 0 0 65536`).
+
 ---
 
 ## 1. Set up the environment (once)
@@ -243,6 +253,7 @@ available for cone/receptor calculations.
 | Clipped (flat-topped) spectra | Integration time too high — lower `--int_us`. |
 | Ragged gamma curve | Sensor moved, stray light, or reflections. Re-measure. |
 | Can't set gamma LUT | Add `--native_gamma` to the measurement scripts. |
+| Display measures as non-additive (W != R+G+B) | OS colour management is applying a GPU colour matrix. Disable it (see [step 0](#0-before-you-start--a-checklist)) and re-measure. |
 | `No space left on device` during setup | wxPython is building from source; use the prebuilt wheel (see [step 1](#1-set-up-the-environment-once)). |
 | One `[Errno 75] Overflow` at the start of a run | Expected on USB2000: the first read after the device opens always fails. The retry logic absorbs it; ignore it. |
 | Measured refresh rate is ~1 Hz | No display is actually connected (check `xrandr`). A powered-off monitor reports as disconnected and there is no vblank to sync to. |
