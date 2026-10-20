@@ -73,7 +73,7 @@ supports `--help`.
 | `calibrate_screen.py` | Measures each gun's (R/G/B/W) spectrum and gamma curve at a range of drive levels. The core measurement. |
 | `measure_luminance.py` | Shows black / mid-gray / white fields so you can take manual photometer (cd/m²) readings. |
 | `estimate_luminance.py` | Converts calibration spectra to cd/m² using one photometer-anchored reference spectrum. |
-| `measure_fibre.py` | Measures the fibre / light-pipe path against a calibration lamp and builds wavelength correction factors. |
+| `measure_fibre.py` | Measures the fibre / light-pipe path against a calibration lamp and builds wavelength correction factors. Prompts for a fibre identifier so a correction can be traced back to the fibre it came from. |
 | `combine_calibrations.py` | Applies fibre correction to the screen spectra and writes the final PsychoPy monitor profile. |
 
 Older, exploratory scripts and diagnostics live in [`archived_scripts/`](archived_scripts/)
