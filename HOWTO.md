@@ -154,11 +154,29 @@ python measure_fibre.py \
   --correction-out calibration_data/lamp_first/correction_factors.csv
 ```
 
+**You will be asked which fibre this is.** A correction curve only applies to the
+fibre it was measured through, so the script prompts for an identifier and
+refuses to record an anonymous one:
+
+```
+Which fibre / light-pipe is this measurement going through?
+  Use something you will recognise later (e.g. MRI_long_plastic, blue_SN12345).
+Fibre identifier:
+```
+
+Use something durable — the serial number if the fibre has one, otherwise where
+it lives and what it is (`MRI_long_plastic`). The identifier goes into the output
+filenames, into a `fibre_<id>_<timestamp>.json` metadata file, and into a
+`fibre_id` column in `correction_factors.csv`, so a correction can always be
+traced back to its fibre. Pass `--fibre <id>` to skip the prompt when scripting.
+
 `--lamp-file` is the lamp's known reference spectrum. Two vendor HL-2000-CAL files
 ship in [`data/LampFiles/`](data/LampFiles/); use the one matching your fibre/optic
 setup, or your own lamp's reference file.
 
-**What you get:** `correction_factors.csv` with columns `wavelength,correction_factor`.
+**What you get:** `correction_factors.csv` with columns
+`wavelength,correction_factor,fibre_id`, plus a `fibre_*.json` noting the fibre
+and acquisition settings. (Older two-column correction files still work.)
 
 ---
 
