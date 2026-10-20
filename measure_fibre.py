@@ -22,6 +22,10 @@ import seabreeze
 
 EXAMPLE_FIBRE_IDS = "e.g. MRI_long_plastic, blue_SN12345"
 
+# Discarded reads before recording. See acquire_spectra for why two are needed.
+WARMUP_READS = 2
+WARMUP_MAX_ATTEMPTS = 6
+
 
 def sanitise_fibre_id(raw: str) -> str:
     """Make a fibre identifier safe to embed in a filename.
@@ -93,8 +97,27 @@ def acquire_spectra(
         wavelengths = spec.wavelengths()
         intensities = np.empty((n_spectra, wavelengths.size))
 
-        # One warm-up read helps older USB devices settle.
-        spec.intensities(correct_dark_counts=False)
+        # Warm-up reads, discarded. Older devices need this twice over:
+        #   * the USB2000 reliably *raises* on the very first read after open
+        #   * the first read that then succeeds still comes back inflated
+        #     (measured at +43% on a steady lamp), because its integration
+        #     window predates the settings taking effect
+        # Two good reads are therefore discarded, retrying through errors.
+        good = 0
+        last_error: Exception | None = None
+        for _ in range(WARMUP_MAX_ATTEMPTS):
+            try:
+                spec.intensities(correct_dark_counts=False)
+                good += 1
+                if good >= WARMUP_READS:
+                    break
+            except Exception as exc:
+                last_error = exc
+                print(f"Warm-up read failed ({type(exc).__name__}: {exc}); retrying")
+                time.sleep(0.25)
+        else:
+            if good < WARMUP_READS:
+                raise last_error or RuntimeError("Spectrometer never returned a usable warm-up read.")
         for i in range(n_spectra):
             intensities[i] = spec.intensities(correct_dark_counts=False)
             time.sleep(delay_s)
