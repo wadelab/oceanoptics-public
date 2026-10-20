@@ -148,6 +148,88 @@ just steps 1 and 5.
 timestamps the scripts generate. No sample calibration outputs ship with this
 repo — you generate your own into `calibration_data/`.
 
+### How the pieces fit together
+
+Two measurements feed the monitor profile: the screen's own spectra and gamma,
+and — if you view through a fibre — a correction for that fibre. Absolute
+luminance is a **separate branch**: it anchors spectra to cd/m², but it does not
+feed the PsychoPy profile.
+
+```mermaid
+flowchart TD
+    MON{{"Monitor under test"}}
+    SPEC{{"Ocean Optics spectrometer"}}
+    PHOT{{"Photometer (e.g. LS-110)"}}
+    LAMP{{"Calibration lamp + fibre"}}
+    LREF["Lamp reference .LMP<br/>(data/LampFiles/)"]
+
+    subgraph REQ ["Step 1 — required"]
+        CS("calibrate_screen.py")
+        SPECTRA["spectra_final_*.csv<br/>R, G, B per wavelength"]
+        GAMMA["gamma_params_*.csv<br/>gamma, k, b per gun"]
+        NPZ["calibration_*.npz<br/>all spectra + dark"]
+    end
+
+    subgraph FIB ["Step 3 — optional: fibre path"]
+        MF("measure_fibre.py")
+        CORR["correction_factors.csv<br/>+ fibre_id"]
+    end
+
+    subgraph LUM ["Steps 2 & 4 — optional: absolute luminance"]
+        ML("measure_luminance.py")
+        READ["luminance_*.csv / .json<br/>cd/m² readings"]
+        EL("estimate_luminance.py")
+        LEST["luminance_estimates.csv<br/>cd/m² for other screens"]
+    end
+
+    MON --> CS
+    SPEC --> CS
+    CS --> SPECTRA
+    CS --> GAMMA
+    CS --> NPZ
+
+    LAMP --> MF
+    SPEC --> MF
+    LREF --> MF
+    MF --> CORR
+
+    MON --> ML
+    PHOT --> ML
+    ML --> READ
+    READ --> EL
+    NPZ --> EL
+    CORR -.-> EL
+    EL --> LEST
+
+    SPECTRA --> COMB("combine_calibrations.py")
+    GAMMA --> COMB
+    CORR -.->|"omit for no fibre"| COMB
+    NPZ -.->|"--subtract-dark"| COMB
+
+    COMB --> CORRECTED["*_corrected.csv"]
+    COMB --> PROFILE["PsychoPy monitor .json"]
+
+    %% role, not branch: the subgraph titles already say which branch a node is in
+    classDef hw fill:#FFFFFF,stroke:#8A8578,color:#3a3a3a
+    classDef script fill:#33608C,stroke:#22425f,color:#FFFFFF
+    classDef data fill:#BFBDB6,stroke:#8A8578,color:#1a1a1a
+    classDef final fill:#D08C34,stroke:#8f5f20,color:#FFFFFF,stroke-width:3px
+
+    class MON,SPEC,PHOT,LAMP,LREF hw
+    class SPECTRA,GAMMA,NPZ,CORR,READ,LEST,CORRECTED data
+    class CS,MF,ML,EL,COMB script
+    class PROFILE final
+```
+
+Solid arrows are required inputs, dotted arrows optional. Everything converges on
+step 5, `combine_calibrations.py`, which is the only script that writes the
+monitor profile.
+
+The one thing worth noticing: **`combine_calibrations.py` takes no luminance
+input.** Absolute luminance anchors your spectra to cd/m² and is useful in its own
+right, but it is a side branch ending in its own CSV — it does not change the
+profile PsychoPy loads.
+
 ### 1. Measure the screen
 
 ```bash
