@@ -145,7 +145,7 @@ def main(
         raise ValueError("settle_frames must be 0 or greater.")
 
     outdir = Path(outdir)
-    outdir.mkdir(exist_ok=True)
+    outdir.mkdir(parents=True, exist_ok=True)
 
     # -----------------------------------------------------------------
     # Instrument initialisation
