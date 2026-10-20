@@ -81,6 +81,64 @@ and are kept for reference only.
 
 ---
 
+## Before you measure: disable OS colour management
+
+**Do this first. If you skip it your calibration can be silently wrong.**
+
+Desktop colour management applies a colour-correction *matrix* on the GPU,
+between your stimulus and the panel. Your software asks for pure red and the
+monitor receives something else. It is especially nasty because these matrices
+are built to preserve white, so a white-point check looks perfect while every
+pure primary is wrong.
+
+### Linux (GNOME / colord)
+
+```bash
+# 1. CHECK - identity means nothing is being applied
+xrandr --prop | grep CscMatrix
+#    identity is:  65536 0 0 0  0 65536 0 0  0 0 65536 0
+#    anything else means a transform is ACTIVE
+
+# 2. DISABLE for your account (survives package upgrades)
+systemctl --user mask org.gnome.SettingsDaemon.Color.service
+pkill -x gsd-color
+
+# 3. DISABLE for every account on the machine (recommended on a shared rig)
+sudo ln -sf /dev/null /etc/systemd/user/org.gnome.SettingsDaemon.Color.service
+
+# 4. Remove stale auto-generated monitor profiles, and confirm Night Light is off
+rm -f ~/.local/share/icc/edid-*.icc
+gsettings get org.gnome.settings-daemon.plugins.color night-light-enabled   # want: false
+
+# 5. Log out and back in, then re-run the check in step 1
+```
+
+The mask is **per user**: anyone else who logs in gets their own colour daemon
+and their own corrupted data, which is why step 3 matters on a shared machine.
+
+Note there is often **no software reset**: on NVIDIA's proprietary driver
+`CscMatrix` is read-only and the xrandr `CTM` property is ignored, so you cannot
+simply write an identity matrix back. Stopping the daemon is the fix.
+
+### macOS
+
+System Settings -> Displays -> Color Profile: choose a generic profile rather
+than a calibrated/vendor one, and turn off **Night Shift** and **True Tone**.
+
+### Windows
+
+Settings -> Display -> **Night light** off; then Color Management -> Devices,
+and remove any ICC profile associated with the display.
+
+### Confirming it worked
+
+The physical test is additivity: measure R, G, B and W separately and check
+`W ~= R+G+B` in each band. A healthy display gives 0.99-1.01. On one rig a
+GNOME-applied matrix drove red at 61% of its true value and produced a red-band
+ratio of 2.73 while white still measured correctly.
+
+---
+
 ## Typical workflow
 
 A full, spectrally-corrected calibration is five steps. The minimal version is
@@ -226,6 +284,11 @@ reference cone fundamentals, and vendor lamp reference files.
   build libraries for wxPython before `uv sync --extra psychopy`.
 - **Gamma LUT can't be set on your platform:** run the measurement scripts with
   `--native_gamma` to measure with the native OS/GPU gamma table instead.
+- **Display measures as non-additive** (W noticeably different from R+G+B):
+  OS colour management is applying a GPU colour matrix. See
+  [Before you measure](#before-you-measure-disable-os-colour-management).
+  Real LCD/LED panels are additive to within ~1%, so a large discrepancy almost
+  always means something in the video path is transforming your colours.
 
 ---
 
