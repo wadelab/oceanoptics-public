@@ -26,6 +26,14 @@ EXAMPLE_FIBRE_IDS = "e.g. MRI_long_plastic, blue_SN12345"
 WARMUP_READS = 2
 WARMUP_MAX_ATTEMPTS = 6
 
+# Optically masked pixels of the USB2000. They see no light, so their mean is the
+# dark level of each spectrum. Other models mask different pixels: --dark-pixels.
+USB2000_DARK_PIXELS = "2-24"
+
+# Below this many counts above dark the correction is dominated by noise and by
+# the dark estimate, so generate_correction_factors warns.
+LOW_SIGNAL_COUNTS = 50.0
+
 
 def sanitise_fibre_id(raw: str) -> str:
     """Make a fibre identifier safe to embed in a filename.
@@ -162,12 +170,25 @@ def save_spectra(
     return outfile, timestamp
 
 
-def _normalize(values: pd.Series) -> pd.Series:
-    values = values - values.min()
-    max_value = values.max()
-    if max_value == 0:
-        raise ValueError("Cannot normalize a flat/zero spectrum.")
-    return values / max_value
+def parse_pixel_range(text: str) -> slice:
+    """Turn an inclusive pixel range such as '2-24' into slice(2, 25)."""
+    match = re.fullmatch(r"\s*(\d+)\s*-\s*(\d+)\s*", text)
+    if not match or int(match.group(1)) > int(match.group(2)):
+        raise ValueError(f"Dark pixel range {text!r} should look like '2-24'.")
+    return slice(int(match.group(1)), int(match.group(2)) + 1)
+
+
+def subtract_dark(spectrum: np.ndarray, dark_pixels: slice) -> tuple[np.ndarray, float]:
+    """Subtract the dark level, taken as the mean of the optically masked pixels.
+
+    Never use the spectrum's minimum as the dark level: pixel 0 of the USB2000
+    always reads 0, so the minimum is 0 and nothing would be subtracted. Earlier
+    versions did that, which left the ~130-count dark level in and made the
+    correction several times too small at the blue end, where the lamp gives
+    only a few dozen counts.
+    """
+    dark = float(np.mean(spectrum[dark_pixels]))
+    return spectrum - dark, dark
 
 
 def generate_correction_factors(
@@ -179,6 +200,7 @@ def generate_correction_factors(
     step_nm: float,
     plot: bool,
     fibre_id: str,
+    dark_pixels: slice = parse_pixel_range(USB2000_DARK_PIXELS),
 ) -> Path:
     lamp_df = pd.read_csv(lamp_file, sep=r"\s+", header=None, names=["wavelength", "true_intensity"])
     meas_df = pd.read_csv(measurement_file)
@@ -189,13 +211,28 @@ def generate_correction_factors(
         raise ValueError(f"No intensity columns found in {measurement_file}")
 
     meas_avg = pd.DataFrame({"wavelength": meas_df[wavelength_col]})
-    meas_avg["avg_measured"] = meas_df[intensity_cols].mean(axis=1)
+    meas_signal, dark = subtract_dark(meas_df[intensity_cols].mean(axis=1).to_numpy(), dark_pixels)
+    print(f"Dark level (mean of pixels {dark_pixels.start}-{dark_pixels.stop - 1}): {dark:.1f} counts")
 
-    lamp_norm = _normalize(lamp_df["true_intensity"])
-    meas_norm = _normalize(meas_avg["avg_measured"])
     wavelengths = np.arange(start_nm, stop_nm + step_nm, step_nm)
+    meas_counts = np.interp(wavelengths, meas_avg["wavelength"], meas_signal)
+    if np.any(meas_counts <= 0):
+        raise ValueError(
+            f"No signal above the dark level at {wavelengths[meas_counts <= 0]} nm. "
+            "Check --dark-pixels for this spectrometer model and that the lamp was on."
+        )
+    low = wavelengths[meas_counts < LOW_SIGNAL_COUNTS]
+    if low.size:
+        print(f"Warning: under {LOW_SIGNAL_COUNTS:.0f} counts above dark at {low.min():g}-{low.max():g} nm "
+              f"(lowest {meas_counts.min():.0f}); the correction there is noisy. "
+              "A longer integration time or more spectra would help.")
+
+    # Scale only. The lamp file is a calibrated spectrum with no offset to remove,
+    # and the measurement has already had its dark level subtracted.
+    lamp_norm = lamp_df["true_intensity"] / lamp_df["true_intensity"].max()
+    meas_norm = meas_signal / meas_signal.max()
     lamp_interp = np.interp(wavelengths, lamp_df["wavelength"], lamp_norm)
-    meas_interp = np.interp(wavelengths, meas_avg["wavelength"], meas_norm)
+    meas_interp = meas_counts / meas_signal.max()
 
     with np.errstate(divide="raise", invalid="raise"):
         correction_factor = lamp_interp / meas_interp
@@ -248,6 +285,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--backend", default="pyseabreeze", choices=["pyseabreeze", "cseabreeze"], help="Seabreeze backend.")
     parser.add_argument("--no-plot", action="store_true", help="Do not save a PNG plot.")
     parser.add_argument("--lamp-file", type=Path, help="Optional two-column lamp reference file.")
+    parser.add_argument("--spectra-file", type=Path,
+                        help="Build the correction from an existing lamp measurement CSV instead of "
+                             "acquiring new spectra (needs --lamp-file). Use this to regenerate old corrections.")
+    parser.add_argument("--dark-pixels", default=USB2000_DARK_PIXELS,
+                        help="Optically masked pixel range whose mean is the dark level "
+                             f"(default {USB2000_DARK_PIXELS}, for the USB2000).")
     parser.add_argument("--correction-out", type=Path, help="Optional output correction_factors.csv path.")
     parser.add_argument("--start-nm", type=float, default=380, help="First correction wavelength.")
     parser.add_argument("--stop-nm", type=float, default=740, help="Last correction wavelength.")
@@ -257,36 +300,44 @@ def parse_args() -> argparse.Namespace:
 
 if __name__ == "__main__":
     args = parse_args()
+    dark_pixels = parse_pixel_range(args.dark_pixels)
     fibre_id = resolve_fibre_id(args.fibre)
-    print(f"Measuring through fibre: {fibre_id}")
-    wls, intens = acquire_spectra(
-        n_spectra=args.n_spectra,
-        integration_us=args.integration_us,
-        delay_s=args.delay_s,
-        backend=args.backend,
-    )
-    outfile, timestamp = save_spectra(
-        wavelengths=wls,
-        intensities=intens,
-        outdir=args.outdir,
-        prefix=args.prefix,
-        plot=not args.no_plot,
-        fibre_id=fibre_id,
-    )
-    print(f"Saved {args.n_spectra} spectra to {outfile}")
-    save_fibre_metadata(
-        outdir=args.outdir,
-        fibre_id=fibre_id,
-        timestamp=timestamp,
-        details={
-            "spectra_file": outfile.name,
-            "n_spectra": args.n_spectra,
-            "integration_us": args.integration_us,
-            "delay_s": args.delay_s,
-            "backend": args.backend,
-            "lamp_file": str(args.lamp_file) if args.lamp_file else None,
-        },
-    )
+    if args.spectra_file:
+        if not args.lamp_file:
+            raise SystemExit("--spectra-file needs --lamp-file.")
+        outfile = args.spectra_file
+        print(f"Using existing spectra for fibre {fibre_id}: {outfile}")
+    else:
+        print(f"Measuring through fibre: {fibre_id}")
+        wls, intens = acquire_spectra(
+            n_spectra=args.n_spectra,
+            integration_us=args.integration_us,
+            delay_s=args.delay_s,
+            backend=args.backend,
+        )
+        outfile, timestamp = save_spectra(
+            wavelengths=wls,
+            intensities=intens,
+            outdir=args.outdir,
+            prefix=args.prefix,
+            plot=not args.no_plot,
+            fibre_id=fibre_id,
+        )
+        print(f"Saved {args.n_spectra} spectra to {outfile}")
+        save_fibre_metadata(
+            outdir=args.outdir,
+            fibre_id=fibre_id,
+            timestamp=timestamp,
+            details={
+                "spectra_file": outfile.name,
+                "n_spectra": args.n_spectra,
+                "integration_us": args.integration_us,
+                "delay_s": args.delay_s,
+                "backend": args.backend,
+                "lamp_file": str(args.lamp_file) if args.lamp_file else None,
+                "dark_pixels": args.dark_pixels,
+            },
+        )
     if args.lamp_file:
         correction_out = args.correction_out or outfile.with_name("correction_factors.csv")
         correction_file = generate_correction_factors(
@@ -298,5 +349,6 @@ if __name__ == "__main__":
             step_nm=args.step_nm,
             plot=not args.no_plot,
             fibre_id=fibre_id,
+            dark_pixels=dark_pixels,
         )
         print(f"Saved correction factors to {correction_file}")

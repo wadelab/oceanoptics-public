@@ -178,6 +178,14 @@ setup, or your own lamp's reference file.
 `wavelength,correction_factor,fibre_id`, plus a `fibre_*.json` noting the fibre
 and acquisition settings. (Older two-column correction files still work.)
 
+If the script warns that the signal is under 50 counts above dark at the blue
+end, the correction there is noisy: repeat with a longer `--integration-us`
+(keeping the peak below saturation) or more `--n-spectra`.
+
+**Have a correction made before 2026-11-09?** It is wrong below about 450 nm
+(the dark level was not subtracted). Regenerate it from the saved lamp
+measurement with `--spectra-file`; see the README, step 3.
+
 ---
 
 ## 5. (Optional) Estimate luminance for other screens
