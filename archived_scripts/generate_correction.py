@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Generate spectrometer/light-pipe correction factors from a calibrated lamp."""
+"""Generate spectrometer/light-pipe correction factors from a calibrated lamp.
+
+ARCHIVED, DO NOT USE: this script subtracts each spectrum's minimum as its
+baseline. On the USB2000 the minimum is pixel 0, which always reads 0, so the
+dark level is never removed and the correction is several times too small
+below about 450 nm. Use measure_fibre.py (with --spectra-file to rebuild a
+correction from saved lamp spectra), which subtracts the real dark level.
+"""
 
 from __future__ import annotations
 
