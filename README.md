@@ -278,7 +278,30 @@ python measure_fibre.py \
   --correction-out calibration_data/lamp_YYYYMMDD_HHMMSS/correction_factors.csv
 ```
 
-The correction file has columns `wavelength,correction_factor`.
+The correction file has columns `wavelength,correction_factor,fibre_id`; multiply
+dark-subtracted screen spectra by the factor. The lamp measurement's dark level is
+the mean of the spectrometer's optically masked pixels (2–24 on the USB2000; set
+`--dark-pixels` for other models). The script warns where the lamp gives fewer
+than 50 counts above dark, usually the blue end; a longer `--integration-us` or
+more `--n-spectra` makes the correction less noisy there.
+
+**Corrections made before 2026-11-09 are wrong below about 450 nm.** Earlier
+versions subtracted the spectrum's minimum instead of the dark level. On the
+USB2000 that minimum is pixel 0, which always reads 0, so the ~130-count dark
+level stayed in and the correction came out several times too small in the blue
+(for the reference fibre: 6× at 380 nm, 3× at 400 nm, 1.4× at 450 nm; under 2%
+above 560 nm). Regenerate old corrections from their saved lamp measurement; no
+hardware is needed:
+
+```bash
+python measure_fibre.py --fibre <id> \
+  --spectra-file calibration_data/lamp_.../lamp_measurement_<id>_<timestamp>.csv \
+  --lamp-file data/LampFiles/030410313_FIB.LMP \
+  --correction-out calibration_data/lamp_.../correction_factors.csv
+```
+
+Monitor profiles built with an old correction then need rebuilding with
+`combine_calibrations.py`.
 
 ### 4. *(Optional)* Spectral luminance estimate
 
@@ -389,6 +412,8 @@ python archived_scripts/validateMonitor.py MyMonitor
 See [AGENTS.md](AGENTS.md) for the (human- and agent-facing) editing conventions:
 minimal behaviour-preserving changes, no silent changes to calibration maths, and
 timestamped output names. [HANDOFF.md](HANDOFF.md) is a session hand-off template.
+
+Tests (no hardware needed): `uv run --with pytest pytest tests`.
 
 ## License
 
